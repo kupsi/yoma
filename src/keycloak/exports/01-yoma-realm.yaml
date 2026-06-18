@@ -261,6 +261,7 @@ roles:
         containerId: 8fb0b64b-d141-41be-90a2-2bc5298eb53b
         attributes: {}
     security-admin-console: []
+    p2e-global: []
     goodwall: []
     account-console: []
     broker:
@@ -704,6 +705,53 @@ clients:
       - address
       - phone
       - offline_access
+      - microprofile-jwt
+  - id: 3dffff19-11d1-4c4e-8322-30b9e280a1a5
+    clientId: p2e-global
+    name: p2e-global
+    description: P2E Global SSO Partner (private client)
+    rootUrl: $(env:CLIENT_P2E_GLOBAL_URL)
+    adminUrl: $(env:CLIENT_P2E_GLOBAL_URL)
+    baseUrl: $(env:CLIENT_P2E_GLOBAL_URL)
+    surrogateAuthRequired: false
+    enabled: $(env:CLIENT_P2E_GLOBAL_ENABLED)
+    alwaysDisplayInConsole: false
+    clientAuthenticatorType: client-secret
+    secret: $(env:CLIENT_P2E_GLOBAL_SECRET)
+    redirectUris:
+      - $(env:CLIENT_P2E_GLOBAL_URL_REDIRECT)
+    webOrigins:
+      - $(env:CLIENT_P2E_GLOBAL_URL)
+    notBefore: 0
+    bearerOnly: false
+    consentRequired: false
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    publicClient: false
+    frontchannelLogout: true
+    protocol: openid-connect
+    attributes:
+      post.logout.redirect.uris: $(env:CLIENT_P2E_GLOBAL_URL)/*
+      oidc.ciba.grant.enabled: "false"
+      oauth2.device.authorization.grant.enabled: "false"
+      backchannel.logout.session.required: "true"
+      backchannel.logout.revoke.offline.tokens: "false"
+      use.refresh.tokens: "true"
+    authenticationFlowBindingOverrides: {}
+    fullScopeAllowed: true
+    nodeReRegistrationTimeout: -1
+    defaultClientScopes:
+      - web-origins
+      - acr
+      - offline_access
+      - profile
+      - roles
+      - email
+    optionalClientScopes:
+      - address
+      - phone
       - microprofile-jwt
   - id: 01ad9bb0-a756-434d-940f-b9ffe3f37c9e
     clientId: goodwall

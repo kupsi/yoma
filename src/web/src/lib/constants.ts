@@ -91,6 +91,13 @@ export const THEME_GREEN = "green";
 export const THEME_PURPLE = "purple";
 export const THEME_ORANGE = "orange";
 export const THEME_WHITE = "white";
+export const THEME_GENU = "genu";
+export const THEME_CHILE = "chile";
+export const THEME_P2E = "p2e";
+
+/** Brand name baked at build time via NEXT_PUBLIC_BRAND (chile | p2e | genu | ...).
+ *  Falls back to chile so the existing local stack keeps working with no env set. */
+export const BRAND = (process.env.NEXT_PUBLIC_BRAND ?? "chile").toLowerCase();
 
 export const MAXINT32 = 2147483647;
 

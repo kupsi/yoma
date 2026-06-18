@@ -1,0 +1,351 @@
+# P2E (Passport 2 Earning) aggregator — parallel Yoma stack.
+#
+# Runs alongside the default `yoma-v3` (Chile) stack with no port or container
+# collisions. Same code, different env vars + a separate database & Keycloak.
+#
+# Bring up:
+#   sudo docker compose -f docker-compose.p2e.yml up -d
+#   # first run, force a build of the web image with NEXT_PUBLIC_BRAND=p2e:
+#   sudo docker compose -f docker-compose.p2e.yml build p2e-web
+#
+# URLs:
+#   Web      → http://localhost:3100
+#   API      → http://localhost:5100/swagger
+#   Keycloak → http://p2e-keycloak:8092  (add to /etc/hosts: 127.0.0.1 p2e-keycloak)
+#
+# Test accounts (seeded in the Keycloak realm by p2e-keycloak-users):
+#   testuser@gmail.com          / P@ssword12
+#   testorgadminuser@gmail.com  / P@ssword12
+#   testadminuser@gmail.com     / P@ssword12
+
+name: p2e-aggregator
+
+networks:
+  p2e-net:
+    driver: bridge
+
+volumes:
+  p2e-postgres:
+  p2e-keycloak-pg:
+  p2e-keycloak-providers:
+  p2e-keycloak-themes:
+  p2e-yoma-keys:
+
+services:
+  # ─── Application database ──────────────────────────────────────────
+  p2e-postgres:
+    image: postgres:16.9-alpine
+    container_name: p2e-postgres
+    networks: [p2e-net]
+    volumes:
+      - p2e-postgres:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: P@ssword1
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ─── Cache ────────────────────────────────────────────────────────
+  p2e-valkey:
+    image: valkey/valkey:8-alpine
+    container_name: p2e-valkey
+    networks: [p2e-net]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ─── App-DB seed (orgs + test users) ──────────────────────────────
+  p2e-postgres-init:
+    image: postgres:17-alpine
+    container_name: p2e-postgres-init
+    networks: [p2e-net]
+    depends_on:
+      p2e-postgres:
+        condition: service_healthy
+      p2e-api-health:
+        condition: service_completed_successfully
+    volumes:
+      - ./src/api/cicd/scripts/postgressql-init/post.sql:/post.sql
+    environment:
+      PGHOST: p2e-postgres
+      POSTGRES_PASSWORD: P@ssword1
+      POSTGRES_USER: postgres
+      POSTGRES_DB: yoma-dev
+      PGPORT: 5432
+    command: >
+      bash -c "PGPASSWORD=$$POSTGRES_PASSWORD psql -h $$PGHOST -U $$POSTGRES_USER -d $$POSTGRES_DB -f /post.sql"
+
+  # ─── Keycloak database ────────────────────────────────────────────
+  p2e-keycloak-pg:
+    image: postgres:17-alpine
+    container_name: p2e-keycloak-pg
+    networks: [p2e-net]
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - p2e-keycloak-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ─── Keycloak provider/theme staging ──────────────────────────────
+  p2e-keycloak-init:
+    image: alpine:3
+    container_name: p2e-keycloak-init
+    networks: [p2e-net]
+    user: root
+    command: |
+      sh -c '
+        apk add --no-cache curl unzip &&
+        curl -L https://github.com/vymalo/keycloak-webhook/releases/download/v0.9.1/keycloak-webhook-provider-core-0.9.1-all.jar -o /opt/keycloak/providers/keycloak-webhook-provider-core-0.9.1-all.jar &&
+        curl -L https://github.com/vymalo/keycloak-webhook/releases/download/v0.9.1/keycloak-webhook-provider-http-0.9.1-all.jar -o /opt/keycloak/providers/keycloak-webhook-provider-http-0.9.1-all.jar &&
+        curl -L https://github.com/vymalo/keycloak-webhook/releases/download/v0.9.1/keycloak-webhook-provider-amqp-0.9.1-all.jar -o /opt/keycloak/providers/keycloak-webhook-provider-amqp-0.9.1-all.jar &&
+        curl -L https://github.com/vymalo/keycloak-webhook/releases/download/v0.9.1/keycloak-webhook-provider-syslog-0.9.1-all.jar -o /opt/keycloak/providers/keycloak-webhook-provider-syslog-0.9.1-all.jar &&
+        cp /local-providers/keycloak-phone-provider.jar /local-providers/keycloak-phone-provider.resources.jar /local-providers/keycloak-sms-provider-dummy.jar /local-providers/email-required-authenticator.jar /opt/keycloak/providers/ &&
+        mkdir -p /tmp/theme-extract && cd /tmp/theme-extract &&
+        unzip -o -q /local-providers/keycloak-phone-provider.resources.jar &&
+        if [ -d "theme" ]; then cp -r theme/* /opt/keycloak/themes/; fi &&
+        chown -R 1000:1000 /opt/keycloak/providers /opt/keycloak/themes
+      '
+    volumes:
+      - p2e-keycloak-providers:/opt/keycloak/providers
+      - p2e-keycloak-themes:/opt/keycloak/themes
+      - ./src/keycloak/providers/jars:/local-providers
+
+  # ─── Keycloak ─────────────────────────────────────────────────────
+  p2e-keycloak:
+    image: quay.io/keycloak/keycloak:26.4.0
+    container_name: p2e-keycloak
+    networks: [p2e-net]
+    environment:
+      WEBHOOK_EVENTS_TAKEN: "LOGIN,REGISTER,UPDATE_PROFILE"
+      WEBHOOK_HTTP_BASE_PATH: "http://p2e-api:5000/api/v3/webhook/keycloak"
+      WEBHOOK_HTTP_AUTH_USERNAME: whAdmin
+      WEBHOOK_HTTP_AUTH_PASSWORD: password
+      KC_DB_URL: jdbc:postgresql://p2e-keycloak-pg/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_PORT: 8092
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: password
+      KC_LOG_LEVEL: INFO
+      KC_SPI_PHONE_DEFAULT_SERVICE: dummy
+      KC_SPI_PHONE_DEFAULT_TOKEN_EXPIRES_IN: 300
+      KC_SPI_PHONE_DEFAULT_YOMA_DEFAULT_NUMBER_REGEX: ^\\+?\\d+$
+      TEST_PHONE_NUMBERS: "+27123456789"
+    ports:
+      - 0.0.0.0:8092:8092
+      - 0.0.0.0:9091:9000
+    command:
+      - start-dev
+      - --db=postgres
+      - --features=preview,declarative-ui
+    depends_on:
+      p2e-keycloak-init:
+        condition: service_completed_successfully
+      p2e-keycloak-pg:
+        condition: service_healthy
+    volumes:
+      - p2e-keycloak-providers:/opt/keycloak/providers
+      - p2e-keycloak-themes:/opt/keycloak/themes
+
+  p2e-keycloak-health:
+    image: curlimages/curl
+    container_name: p2e-keycloak-health
+    networks: [p2e-net]
+    restart: "no"
+    command: /bin/sh -c "until curl -fsS http://p2e-keycloak:9000/health/ready; do sleep 5; done"
+    depends_on:
+      p2e-keycloak:
+        condition: service_started
+
+  # ─── Apply realm config (reuses Chile realm YAML, substituted URLs) ─
+  p2e-keycloak-config:
+    image: adorsys/keycloak-config-cli:6.4.0-26.1.0
+    container_name: p2e-keycloak-config
+    networks: [p2e-net]
+    environment:
+      KEYCLOAK_URL: "http://p2e-keycloak:8092/"
+      KEYCLOAK_USER: admin
+      KEYCLOAK_PASSWORD: password
+      KEYCLOAK_AVAILABILITYCHECK_ENABLED: "true"
+      KEYCLOAK_AVAILABILITYCHECK_TIMEOUT: "120s"
+      IMPORT_FILES_LOCATIONS: "/config/*.yaml"
+      IMPORT_VALIDATE: "true"
+      LOGGING_LEVEL_ROOT: "INFO"
+      IMPORT_VAR_SUBSTITUTION_ENABLED: "true"
+      IMPORT_CACHE_ENABLED: "false"
+      CLIENT_YOMA_API_URL: "http://localhost:5100"
+      CLIENT_YOMA_WEB_URL: "http://localhost:3100"
+      CLIENT_ATINGI_ENABLED: "true"
+      CLIENT_ATINGI_URL: "https://preprod.atingi.org"
+      CLIENT_ATINGI_URL_POST_LOGOUT_REDIRECT: "https://keycloak-preprod.enovationaws.com/realms/master/broker/yoma-prod/endpoint"
+      CLIENT_P2E_GLOBAL_ENABLED: "true"
+      CLIENT_P2E_GLOBAL_URL: "https://global.passport2earning.org"
+      CLIENT_P2E_GLOBAL_URL_REDIRECT: "https://PLACEHOLDER.b2clogin.com/PLACEHOLDER.onmicrosoft.com/oauth2/authresp"
+      CLIENT_P2E_GLOBAL_SECRET: superSecretP2EGlobalClientSecret
+      CLIENT_GOODWALL_ENABLED: "true"
+      CLIENT_GOODWALL_URL: "https://www.goodwall.io"
+      CLIENT_GOODWALL_URL_REDIRECT: "goodwallauth://yomaredirect"
+      CLIENT_YOMA_API_SECRET: superSecretYomaApiClientSecret
+      CLIENT_YOMA_WEB_SECRET: superSecretYomaWebClientSecret
+      CLIENT_ATINGI_SECRET: superSecretAtingiClientSecret
+      CLIENT_GOODWALL_SECRET: superSecretAtingiClientSecret
+      CLIENT_IIASA_ENABLED: "true"
+      CLIENT_IIASA_SECRET: superSecretIIASAClientSecret
+      CLIENT_IIASA_URL: https://localhost:44345
+      CLIENT_IIASA_URL_REDIRECT: https://localhost:44345/signin-yoma-oidc
+      CLIENT_IXO_ENABLED: "true"
+      CLIENT_IXO_URL: https://jambo.test.yoma.impacts.exchange
+      CLIENT_IXO_URL_REDIRECT: https://jambo.test.yoma.impacts.exchange/auth/passkey
+      CLIENT_IXO_WEBOS_ENABLED: "true"
+      CLIENT_IXO_WEBOS_SECRET: superSecretIXOClientSecret
+      CLIENT_IXO_WEBOS_URL: https://auth.workos.com
+      CLIENT_IXO_WEBOS_URL_REDIRECT: https://auth.workos.com/sso/oidc/n3WhYIVxmfOSY4sQ2Unz7w3ee/callback
+      CLIENT_MAZA_APP_ENABLED: "true"
+      CLIENT_MAZA_APP_SECRET: superSecretMazaAppClientSecret
+      CLIENT_UNICEF_KENYA_ENABLED: "true"
+      CLIENT_UNICEF_KENYA_SECRET: superSecretUnicefKenyaClientSecret
+      CLIENT_MINI_SASS_ENABLED: "true"
+      CLIENT_MINI_SASS_URL: "http://localhost:5100"
+      CLIENT_MINI_SASS_URL_REDIRECT: "http://localhost:5100/authentication/api/yoma/callback"
+      CLIENT_MINI_SASS_SECRET: superSecretMiniSassClientSecret
+      SA_YOMA_API_PASSWORD: &KCAdminPassword superSecretYomaApiServiceAccountPassword
+      SMTP_PASSWORD: superSecretSmtpPassword
+      GOOGLE_CLIENT_ID: superSecretClientId
+      GOOGLE_CLIENT_SECRET: superSecretClientSecret
+      FACEBOOK_CLIENT_ID: superSecretClientId
+      FACEBOOK_CLIENT_SECRET: superSecretClientSecret
+    volumes:
+      - ./src/keycloak/exports:/config
+      - ./src/api/cicd/secrets:/secrets
+    depends_on:
+      p2e-keycloak-health:
+        condition: service_completed_successfully
+
+  # ─── Seed Keycloak test users ──────────────────────────────────────
+  p2e-keycloak-users:
+    image: curlimages/curl
+    container_name: p2e-keycloak-users
+    networks: [p2e-net]
+    environment:
+      KC_BASE_URL: http://p2e-keycloak:8092
+      KC_REALM: yoma
+      KC_CLIENT_ID: admin-cli
+      KC_ADMIN_USER: sa-yoma-api
+      KC_ADMIN_PASSWORD: *KCAdminPassword
+      KC_ADMIN_REALM: master
+      ADMIN_USER: testadminuser@gmail.com
+      ADMIN_USER_PASSWORD: P@ssword12
+      ORG_ADMIN_USER: testorgadminuser@gmail.com
+      ORG_ADMIN_USER_PASSWORD: P@ssword12
+      TEST_USER: testuser@gmail.com
+      TEST_USER_PASSWORD: P@ssword12
+      YOMA_SYSTEM_USER: system@yoma.world
+      YOMA_SYSTEM_USER_PASSWORD: P@ssword12
+    user: 0:0
+    command:
+      - /bin/sh
+      - -c
+      - /sbin/apk add jq && /bin/sh /scripts/users.sh
+    volumes:
+      - ./src/keycloak/scripts/users.sh:/scripts/users.sh
+    depends_on:
+      p2e-keycloak-config:
+        condition: service_completed_successfully
+      p2e-api-health:
+        condition: service_completed_successfully
+
+  # ─── Yoma API (.NET) ──────────────────────────────────────────────
+  p2e-api:
+    image: ${REGISTRY:-local}/yoma-api:${API_TAG:-latest}
+    container_name: p2e-api
+    networks: [p2e-net]
+    build:
+      context: ./src/api
+      dockerfile: ./Dockerfile
+    restart: always
+    environment:
+      ASPNETCORE_ENVIRONMENT: Local
+      ASPNETCORE_URLS: "http://+:5000"
+      ConnectionStrings__SQLConnection: "Host=p2e-postgres;Port=5432;Database=yoma-dev;Username=postgres;Password=P@ssword1;SslMode=Prefer;Trust Server Certificate=True;Include Error Detail=true;GSS Encryption Mode=Disable;"
+      ConnectionStrings__RedisConnection: "p2e-valkey:6379"
+      Keycloak__AuthServerUrl: "http://p2e-keycloak:8092"
+      Logging__LogLevel__Default: "Debug"
+      Logging__LogLevel__Microsoft: "Debug"
+      Logging__LogLevel__Microsoft.Hosting.Lifetime: "Information"
+      Logging__LogLevel__Microsoft.EntityFrameworkCore: "Error"
+      AllowedOrigins: "http://localhost:5100;http://localhost:3100"
+    env_file:
+      - ./src/api/env.secrets
+    ports:
+      - "0.0.0.0:5100:5000"
+    volumes:
+      - p2e-yoma-keys:/root/.aspnet/DataProtection-Keys
+      - ./src/api/src/application/Yoma.Core.Api/appsettings.Local.json:/api/appsettings.Local.json
+    depends_on:
+      p2e-postgres:
+        condition: service_healthy
+      p2e-valkey:
+        condition: service_healthy
+
+  p2e-api-health:
+    image: curlimages/curl
+    container_name: p2e-api-health
+    networks: [p2e-net]
+    restart: "no"
+    command: >
+      /bin/sh -c " until curl -fsS 'http://p2e-api:5000/api/v3/lookup/skill?PageNumber=1&PageSize=10' | grep '\"totalCount\":\s*[1-9][0-9]*' > /dev/null; do
+        echo 'API data not populated yet.';
+        sleep 5;
+      done; echo 'API data populated. Health check passed.'"
+    depends_on:
+      p2e-api:
+        condition: service_started
+
+  # ─── Yoma Web (Next.js) ───────────────────────────────────────────
+  p2e-web:
+    image: ${REGISTRY:-local}/p2e-web:${YOUTH_TAG:-latest}
+    container_name: p2e-web
+    networks: [p2e-net]
+    build:
+      context: ./src/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_ENVIRONMENT: local
+        NEXT_PUBLIC_BRAND: p2e
+    working_dir: /app
+    ports:
+      - "3100:3000"
+    environment:
+      NEXTAUTH_SECRET: VerySecretAndSecureNextAuthSecret
+      KEYCLOAK_CLIENT_ID: yoma-web
+      KEYCLOAK_CLIENT_SECRET: superSecretYomaWebClientSecret
+      NEXTAUTH_URL: http://localhost:3100
+      API_BASE_URL: http://p2e-api:5000/api/v3
+      KEYCLOAK_ISSUER: http://p2e-keycloak:8092/realms/yoma
+      NEXT_PUBLIC_KEYCLOAK_DEFAULT_PROVIDER: yoma-web
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:5100/api/v3
+      NEXT_PUBLIC_ENVIRONMENT: local
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: secret
+      NEXT_PUBLIC_GA_MEASUREMENT_ID: secret
+      NEXT_PUBLIC_DD_RUM_APP_ID: your-datadog-app-id
+      NEXT_PUBLIC_DD_RUM_TOKEN: your-datadog-client-token
+      NEXT_PUBLIC_DD_RUM_SESSION_SAMPLE_RATE: 100
+      NEXT_PUBLIC_DD_RUM_SESSION_REPLAY_SAMPLE_RATE: 20
+      MARKETPLACE_ENABLED: true
+      NEXT_PUBLIC_PASSPORT_ENABLED: true

@@ -20,7 +20,7 @@ services:
       KEYCLOAK_CLIENT_SECRET: superSecretYomaWebClientSecret
       NEXTAUTH_URL: http://localhost:3000
       API_BASE_URL: http://yoma-api:5000/api/v3
-      KEYCLOAK_ISSUER: http://keycloak:8080/realms/yoma
+      KEYCLOAK_ISSUER: http://keycloak:8091/realms/yoma
       NEXT_PUBLIC_KEYCLOAK_DEFAULT_PROVIDER: yoma-web
       NEXT_PUBLIC_API_BASE_URL: http://localhost:5000/api/v3
       NEXT_PUBLIC_ENVIRONMENT: local

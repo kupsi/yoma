@@ -1,9 +1,13 @@
 import { Head, Html, Main, NextScript } from "next/document";
 import Script from "next/script";
+import { BRAND } from "~/lib/constants";
+
+const BRAND_LANG: Record<string, string> = { chile: "es", p2e: "en" };
 
 export default function Document() {
+  const lang = BRAND_LANG[BRAND] ?? "en";
   return (
-    <Html lang="en" data-theme="light">
+    <Html lang={lang} data-theme={BRAND}>
       <Head>
         <meta
           name="description"

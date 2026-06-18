@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import logoPicDark from "public/images/logo-dark.webp";
 import logoPicLight from "public/images/logo-light.webp";
+import logoGenU from "public/images/genu/logo-genu.webp";
+import ChileWordmark from "~/components/Chile/ChileWordmark";
+import P2EWordmark from "~/components/P2E/P2EWordmark";
 import { useEffect, useMemo, useState } from "react";
 import { FaChevronDown, FaChevronUp } from "react-icons/fa";
 import { IoMdClose, IoMdMenu, IoMdSettings } from "react-icons/io";
@@ -614,7 +617,26 @@ export const Navbar: React.FC<{ theme: string }> = (theme) => {
               tabIndex={isDrawerOpen ? -1 : 0}
               title="Home"
             >
-              {theme.theme === "white" ? (
+              {theme.theme === "chile" ? (
+                <span className="rounded-md bg-white px-3 py-1.5">
+                  <ChileWordmark height={26} onLight />
+                </span>
+              ) : theme.theme === "p2e" ? (
+                <span className="rounded-md bg-white px-3 py-1.5">
+                  <P2EWordmark height={26} onLight />
+                </span>
+              ) : theme.theme === "genu" ? (
+                <span className="rounded-md bg-white px-3 py-1">
+                  <Image
+                    src={logoGenU}
+                    alt="Generation Unlimited"
+                    height={32}
+                    className="h-auto"
+                    tabIndex={-1}
+                    style={{ maxHeight: 32, width: "auto" }}
+                  />
+                </span>
+              ) : theme.theme === "white" ? (
                 <Image
                   src={logoPicDark}
                   alt="Logo"

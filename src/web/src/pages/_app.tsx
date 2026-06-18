@@ -10,7 +10,7 @@ import { type Session } from "next-auth";
 import { SessionProvider } from "next-auth/react";
 import { ThemeProvider } from "next-themes";
 import type { AppProps } from "next/app";
-import { Nunito, Open_Sans } from "next/font/google";
+import { Nunito, Noto_Sans, Open_Sans } from "next/font/google";
 import { useRouter } from "next/router";
 import type { ReactElement, ReactNode } from "react";
 import { useState } from "react";
@@ -21,7 +21,7 @@ import ConfirmationModalContextProvider from "~/context/modalConfirmationContext
 import { config } from "~/lib/react-query-config";
 import "~/styles/globals.css";
 import "~/styles/FileUpload.css";
-import { THEME_PURPLE } from "~/lib/constants";
+import { BRAND, THEME_PURPLE } from "~/lib/constants";
 import { GoogleAnalytics } from "~/components/GoogleAnalytics";
 import Router from "next/router";
 import NProgress from "nprogress";
@@ -40,6 +40,13 @@ const nunito = Nunito({
   variable: "--font-nunito",
   display: "swap",
   weight: ["300", "400", "500", "600", "700", "800", "900"],
+});
+
+const notoSans = Noto_Sans({
+  subsets: ["latin"],
+  variable: "--font-noto-sans",
+  display: "swap",
+  weight: ["400", "500", "600", "700", "800", "900"],
 });
 
 //#region Configure NProgress
@@ -78,12 +85,11 @@ const MyApp = ({
   // Use the layout defined at the page level, if available
   const getLayout = Component.getLayout ?? ((page) => page);
 
-  // get theme from component properties if available
-  const getTheme = Component.theme ?? (() => THEME_PURPLE);
-  const theme =
-    getTheme != null && getTheme != undefined
-      ? getTheme(component)
-      : THEME_PURPLE;
+  // Brand picked at build time via NEXT_PUBLIC_BRAND (see constants.ts).
+  // Forced site-wide so the navbar/footer stay branded on every route,
+  // including logged-in and admin pages.
+  const theme = BRAND;
+  void THEME_PURPLE;
 
   return (
     <Provider>
@@ -93,7 +99,7 @@ const MyApp = ({
             <HydrationBoundary state={pageProps.dehydratedState ?? null}>
               <div
                 id="mainContent"
-                className={`${openSans.variable} ${nunito.variable} font-sans`}
+                className={`${openSans.variable} ${nunito.variable} ${notoSans.variable} font-sans`}
               >
                 <ConfirmationModalContextProvider>
                   <Global />

@@ -43,4 +43,30 @@
 
   /* Utility colors */
   --color-overlay: rgba(0, 0, 0, 0.5);
+
+  /* GenU / Generation Unlimited brand colors (from generationunlimited.org stylesheet) */
+  --color-genu-blue: #00aeef;
+  --color-genu-blue-alt: #1cabe2;
+  --color-genu-blue-dark: #0f5c85;
+  --color-genu-blue-light: #d6f0fb;
+  --color-genu-navy: #003087;
+  --color-genu-red: #e8342a;
+  --color-genu-orange: #f5821f;
+  --color-genu-yellow: #fcc72c;
+
+  /* Chile aggregator brand colors (flag-inspired) */
+  --color-chile-blue: #0033a0;
+  --color-chile-blue-dark: #002577;
+  --color-chile-blue-light: #e7edf8;
+  --color-chile-red: #da291c;
+  --color-chile-red-dark: #b21f15;
+
+  /* P2E (Passport 2 Earning) brand colors — passport navy + foil gold. */
+  --color-p2e-navy: #102a54;
+  --color-p2e-navy-dark: #0a1d3b;
+  --color-p2e-navy-light: #e3e8f3;
+  --color-p2e-gold: #c8a14a;
+  --color-p2e-gold-dark: #9c7a2f;
+  --color-p2e-cream: #f6efe1;
+  --color-p2e-cream-deep: #ebe1c8;
 }

@@ -29,6 +29,10 @@ ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 ENV NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
 ARG NEXT_PUBLIC_GA_MEASUREMENT_ID
 ENV NEXT_PUBLIC_GA_MEASUREMENT_ID=${NEXT_PUBLIC_GA_MEASUREMENT_ID}
+# Brand selector — must be baked at build time because it gates code paths
+# (theme, landing page, layout) via constants.ts.
+ARG NEXT_PUBLIC_BRAND=chile
+ENV NEXT_PUBLIC_BRAND=${NEXT_PUBLIC_BRAND}
 
 RUN \
   if [ -f yarn.lock ]; then SKIP_ENV_VALIDATION=1 yarn build; \

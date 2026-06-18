@@ -478,6 +478,107 @@ html:has(body.content-overflow-y) {
   background-color: var(--color-purple);
   color: var(--color-white);
 }
+[data-theme="genu"] {
+  font-family: var(--font-noto-sans), "Noto Sans", sans-serif;
+}
+[data-theme="genu"] .bg-theme {
+  background-color: var(--color-genu-navy);
+  color: var(--color-white);
+}
+[data-theme="genu"] .drawer-side #btnSignIn,
+[data-theme="genu"] .drawer-side #btnSignOut {
+  background-color: var(--color-genu-navy);
+  color: var(--color-white);
+}
+[data-theme="genu"] #nprogress .bar {
+  background: var(--color-genu-blue) !important;
+}
+
+[data-theme="chile"] {
+  font-family: var(--font-open-sans), "Open Sans", sans-serif;
+}
+[data-theme="chile"] .bg-theme,
+[data-theme="chile"] .navbar.bg-theme,
+[data-theme="chile"] .bg-theme.navbar {
+  background-color: var(--color-chile-blue) !important;
+  color: var(--color-white) !important;
+}
+[data-theme="chile"] .bg-theme a,
+[data-theme="chile"] .bg-theme button,
+[data-theme="chile"] .navbar.bg-theme a,
+[data-theme="chile"] .navbar.bg-theme button {
+  color: var(--color-white) !important;
+}
+[data-theme="chile"] .drawer-side #btnSignIn,
+[data-theme="chile"] .drawer-side #btnSignOut {
+  background-color: var(--color-chile-blue);
+  color: var(--color-white);
+}
+/* Left drawer/sidebar panel: replace its hardcoded white background with
+   the Chile red brand color, and ensure inner text is readable. The inner
+   panel is the direct .bg-white child of .drawer-side. */
+[data-theme="chile"] .drawer-side > .bg-white {
+  background-color: var(--color-chile-red) !important;
+  color: var(--color-white) !important;
+}
+[data-theme="chile"] .drawer-side > .bg-white * {
+  color: inherit;
+}
+/* Keep explicit white-pill action buttons (sign-in / sign-out / language
+   switcher chips) readable: dark text on their white pill background. */
+[data-theme="chile"] .drawer-side > .bg-white .bg-white {
+  color: var(--color-gray-dark) !important;
+}
+[data-theme="chile"] #nprogress .bar {
+  background: var(--color-chile-red) !important;
+}
+/* MainLayout's <main class="bg-gray-light"> renders near-white; deepen it
+   under the Chile theme so opportunity cards have contrast against the page. */
+[data-theme="chile"] main.bg-gray-light {
+  background-color: #e7edf8 !important;
+}
+
+/* ------------------------------------------------------------------
+ * P2E (Passport 2 Earning) — skilling-only aggregator
+ * Mirrors the Chile theme structure: bg-theme = navbar background,
+ * drawer-side panel is the gold accent, main background is cream.
+ * ------------------------------------------------------------------ */
+[data-theme="p2e"] {
+  font-family: var(--font-open-sans), "Open Sans", sans-serif;
+}
+[data-theme="p2e"] .bg-theme,
+[data-theme="p2e"] .navbar.bg-theme,
+[data-theme="p2e"] .bg-theme.navbar {
+  background-color: var(--color-p2e-navy) !important;
+  color: var(--color-white) !important;
+}
+[data-theme="p2e"] .bg-theme a,
+[data-theme="p2e"] .bg-theme button,
+[data-theme="p2e"] .navbar.bg-theme a,
+[data-theme="p2e"] .navbar.bg-theme button {
+  color: var(--color-white) !important;
+}
+[data-theme="p2e"] .drawer-side #btnSignIn,
+[data-theme="p2e"] .drawer-side #btnSignOut {
+  background-color: var(--color-p2e-gold);
+  color: var(--color-p2e-navy-dark);
+}
+[data-theme="p2e"] .drawer-side > .bg-white {
+  background-color: var(--color-p2e-navy-dark) !important;
+  color: var(--color-white) !important;
+}
+[data-theme="p2e"] .drawer-side > .bg-white * {
+  color: inherit;
+}
+[data-theme="p2e"] .drawer-side > .bg-white .bg-white {
+  color: var(--color-gray-dark) !important;
+}
+[data-theme="p2e"] #nprogress .bar {
+  background: var(--color-p2e-gold) !important;
+}
+[data-theme="p2e"] main.bg-gray-light {
+  background-color: var(--color-p2e-cream) !important;
+}
 
 /* Miscellaneous Styles */
 /* Hide the Google Translate toolbar */
