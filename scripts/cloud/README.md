@@ -16,13 +16,21 @@ Ubuntu 24.04 server.
 ```sh
 git clone https://github.com/kupsi/yoma.git
 cd yoma
-bash scripts/cloud/setup.sh <PUBLIC_IP>
+bash scripts/cloud/setup.sh <PUBLIC_IP> [chile|p2e|both]
 ```
 
-For example:
+For example, on an 8 GB+ server (both stacks at once):
 
 ```sh
-bash scripts/cloud/setup.sh 178.128.31.178
+bash scripts/cloud/setup.sh 178.128.31.178 both
+```
+
+Or on a tight 4 GB server (one stack at a time):
+
+```sh
+bash scripts/cloud/setup.sh 178.128.31.178 p2e      # P2E only
+# later, switch:
+bash scripts/cloud/setup.sh 178.128.31.178 chile    # stops P2E, starts Chile
 ```
 
 The script will:
@@ -87,3 +95,15 @@ Add `-v` to also drop the Postgres + Keycloak volumes.
   `01-yoma-realm.yaml` ship as-is. **Rotate before exposing this to anyone
   beyond yourself.**
 * DNS — IP-only. Layer a domain on top later.
+
+## Continue working on the server with Claude Code
+
+```sh
+bash scripts/cloud/install-claude.sh        # installs Claude Code
+export ANTHROPIC_API_KEY=sk-ant-...          # from console.anthropic.com
+cd ~/yoma && claude                          # picks up CLAUDE.md + HANDOFF.md
+```
+
+`scripts/cloud/HANDOFF.md` is a brief written specifically for a fresh
+Claude session on this server — telling it what was built, why memory's
+tight, which quirks have bitten us, and what's open.

@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
 #
-# One-shot setup for a fresh Ubuntu 24.04 server: brings up both the
-# Chile Joven (yoma-v3) and the Passport-2-Earning (p2e-aggregator) stacks
-# on the public IP supplied as the only argument.
+# One-shot setup for a fresh Ubuntu 24.04 server: brings up the Chile Joven
+# (yoma-v3) and/or the Passport-2-Earning (p2e-aggregator) stack on the
+# public IP supplied as the first argument.
 #
 # Usage:
 #   git clone https://github.com/kupsi/yoma.git && cd yoma
-#   bash scripts/cloud/setup.sh 178.128.31.178
+#   bash scripts/cloud/setup.sh <PUBLIC_IP> [chile|p2e|both]
 #
-# Idempotent enough to re-run: docker compose up -d is harmless on already-up
-# stacks, the env patching is guarded against double-patching, and the
-# seeding step is opt-out via SKIP_SEED=1.
+# Examples:
+#   bash scripts/cloud/setup.sh 178.128.31.178            # both stacks
+#   bash scripts/cloud/setup.sh 178.128.31.178 p2e        # P2E only; if Chile
+#                                                         #   is already up,
+#                                                         #   stops it first
+#   bash scripts/cloud/setup.sh 178.128.31.178 chile      # Chile only
+#
+# On a low-memory box (≤ 4 GB) you should run one stack at a time and let
+# the other sit stopped — the script will stop the inactive one to free RAM.
+#
+# Idempotent: env patches detect already-patched files, docker compose up -d
+# is a no-op on healthy stacks, SKIP_SEED=1 skips the (slow) catalogue seed.
 #
 # Resulting URLs (HTTP, no TLS — see docs/P2E_AGGREGATOR.md for the Caddy
 # upgrade path):
@@ -20,8 +29,9 @@
 set -euo pipefail
 
 PUB_IP="${1:-}"
-if [[ -z "$PUB_IP" ]]; then
-  echo "usage: $0 <public-ip>"
+MODE="${2:-both}"   # chile | p2e | both
+if [[ -z "$PUB_IP" || ! "$MODE" =~ ^(chile|p2e|both)$ ]]; then
+  echo "usage: $0 <public-ip> [chile|p2e|both]"
   exit 2
 fi
 
@@ -31,6 +41,17 @@ cd "$REPO_ROOT"
 # ── 0. cosmetics ────────────────────────────────────────────────────────────
 say() { printf "\n\033[1;36m▶ %s\033[0m\n" "$*"; }
 warn() { printf "\033[1;33m⚠ %s\033[0m\n" "$*"; }
+
+# ── 0.5. Ensure at least 4 GB of swap on low-RAM boxes ────────────────────
+TOTAL_KB=$(grep '^MemTotal:' /proc/meminfo | awk '{print $2}')
+if (( TOTAL_KB < 6 * 1024 * 1024 )) && [[ ! -f /swapfile ]]; then
+  say "Box has $((TOTAL_KB/1024)) MB RAM — adding 4 GB swap as a safety net..."
+  sudo fallocate -l 4G /swapfile
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile >/dev/null
+  sudo swapon /swapfile
+  grep -q "^/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null
+fi
 
 # ── 1. Install Docker + Compose + git + python (if missing) ────────────────
 if ! command -v docker >/dev/null; then
@@ -124,12 +145,7 @@ stamp("src/api/docker-compose.yml", 8091)
 stamp("docker-compose.p2e.yml",     8092)
 PY
 
-# ── 5. Bring up Chile stack (Postgres, Valkey, Keycloak, API, Web) ─────────
-say "Building + starting Chile stack..."
-sudo docker compose up -d --build
-
-# Wait for Chile health endpoints; we want both Keycloak and API ready before
-# touching P2E so the build context isn't fighting for memory.
+# Health-poll helper shared by both stacks.
 wait_http() {
   local url=$1 want=$2
   for _ in $(seq 1 60); do
@@ -140,22 +156,40 @@ wait_http() {
   warn "Timed out waiting for $url (last status $code)"
   return 1
 }
-say "Waiting for Chile services to come up..."
-wait_http "http://${PUB_IP}:8091/realms/yoma/.well-known/openid-configuration" 200
-wait_http "http://${PUB_IP}:5000/api/v3/lookup/timeInterval"                   200
-wait_http "http://${PUB_IP}:3000/"                                             200
 
-# ── 6. Bring up P2E stack ──────────────────────────────────────────────────
-say "Building + starting P2E stack (uses NEXT_PUBLIC_BRAND=p2e build arg)..."
-sudo docker compose -f docker-compose.p2e.yml up -d --build
+# ── 5. Bring up the requested stack(s); stop the other on low-RAM boxes ────
+LOW_RAM=$([ "$TOTAL_KB" -lt $((6 * 1024 * 1024)) ] && echo 1 || echo 0)
 
-say "Waiting for P2E services to come up..."
-wait_http "http://${PUB_IP}:8092/realms/yoma/.well-known/openid-configuration" 200
-wait_http "http://${PUB_IP}:5100/api/v3/lookup/timeInterval"                   200
-wait_http "http://${PUB_IP}:3100/"                                             200
+if [[ "$MODE" == "chile" || "$MODE" == "both" ]]; then
+  if [[ "$MODE" == "chile" && "$LOW_RAM" == "1" ]] && docker ps --format '{{.Names}}' | grep -q '^p2e-'; then
+    say "Stopping P2E stack to free RAM for Chile..."
+    sudo docker compose -f docker-compose.p2e.yml stop
+  fi
+  say "Building + starting Chile stack..."
+  sudo docker compose up -d --build
+  say "Waiting for Chile services to come up..."
+  wait_http "http://${PUB_IP}:8091/realms/yoma/.well-known/openid-configuration" 200
+  wait_http "http://${PUB_IP}:5000/api/v3/lookup/timeInterval"                   200
+  wait_http "http://${PUB_IP}:3000/"                                             200
+fi
+
+if [[ "$MODE" == "p2e" || "$MODE" == "both" ]]; then
+  if [[ "$MODE" == "p2e" && "$LOW_RAM" == "1" ]] && docker ps --format '{{.Names}}' | grep -q '^yoma-'; then
+    say "Stopping Chile stack to free RAM for P2E..."
+    sudo docker compose stop
+  fi
+  say "Building + starting P2E stack (uses NEXT_PUBLIC_BRAND=p2e build arg)..."
+  sudo docker compose -f docker-compose.p2e.yml up -d --build
+  say "Waiting for P2E services to come up..."
+  wait_http "http://${PUB_IP}:8092/realms/yoma/.well-known/openid-configuration" 200
+  wait_http "http://${PUB_IP}:5100/api/v3/lookup/timeInterval"                   200
+  wait_http "http://${PUB_IP}:3100/"                                             200
+fi
 
 # ── 7. Seed the P2E catalogue (80 courses from passport2earning.org) ───────
-if [[ "${SKIP_SEED:-0}" == "1" ]]; then
+if [[ "$MODE" == "chile" ]]; then
+  : # nothing to seed for Chile-only runs
+elif [[ "${SKIP_SEED:-0}" == "1" ]]; then
   warn "SKIP_SEED=1 set — not seeding P2E content."
 else
   say "Seeding 80 P2E Global Library courses into the P2E instance..."
@@ -176,6 +210,7 @@ else
       python:3.12-alpine python3 /c.py
   fi
 fi
+# end of seeding block
 
 # ── 8. Firewall ────────────────────────────────────────────────────────────
 if command -v ufw >/dev/null && sudo ufw status | grep -q "Status: active"; then
@@ -186,21 +221,23 @@ if command -v ufw >/dev/null && sudo ufw status | grep -q "Status: active"; then
 fi
 
 # ── done ───────────────────────────────────────────────────────────────────
-cat <<EOF
-
-╭─────────────────────────────────────────────────────────────────────╮
-│  Both stacks are up.                                                │
-│                                                                     │
-│  Chile Joven  →  http://${PUB_IP}:3000$(printf '%*s' $((23 - ${#PUB_IP})) '')│
-│  P2E          →  http://${PUB_IP}:3100$(printf '%*s' $((23 - ${#PUB_IP})) '')│
-│                                                                     │
-│  Demo accounts (both stacks, same passwords):                       │
-│    testuser@gmail.com         · P@ssword12                          │
-│    testorgadminuser@gmail.com · P@ssword12                          │
-│    testadminuser@gmail.com    · P@ssword12                          │
-│                                                                     │
-│  These are exposed on the public internet over plain HTTP.          │
-│  Treat as a demo, not a production deployment. Rotate secrets       │
-│  and put Caddy + TLS in front before sharing widely.                │
-╰─────────────────────────────────────────────────────────────────────╯
-EOF
+say "Setup finished. Stacks up: $MODE"
+echo
+if [[ "$MODE" == "chile" || "$MODE" == "both" ]]; then
+  echo "  Chile Joven  →  http://${PUB_IP}:3000"
+fi
+if [[ "$MODE" == "p2e" || "$MODE" == "both" ]]; then
+  echo "  P2E          →  http://${PUB_IP}:3100"
+fi
+echo
+echo "  Demo accounts (same on both stacks):"
+echo "    testuser@gmail.com         · P@ssword12"
+echo "    testorgadminuser@gmail.com · P@ssword12"
+echo "    testadminuser@gmail.com    · P@ssword12"
+echo
+echo "  Switch stacks later with:"
+echo "    bash scripts/cloud/setup.sh ${PUB_IP} chile"
+echo "    bash scripts/cloud/setup.sh ${PUB_IP} p2e"
+echo
+warn "Exposed on the public internet over plain HTTP. Demo, not production."
+warn "Rotate the secrets in src/keycloak/exports/01-yoma-realm.yaml before sharing the URL widely."
